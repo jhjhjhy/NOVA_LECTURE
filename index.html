@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>강의 매출 분석 대시보드</title>
+<title>Nova Analytics</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -1796,7 +1796,11 @@ function renderList() {
 function goPage(p) { currentPage=p; renderList(); window.scrollTo(0,0); }
 
 function showPage(name) {
-  if (!_historyLock) history.pushState({ page: name }, '');
+  if (!_historyLock) {
+    const state = { page: name };
+    if (name === 'list') state.selectedKey = selectedKey;
+    history.pushState(state, '');
+  }
   _historyLock = false;
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
@@ -2769,8 +2773,16 @@ function idbLoad(n) {
 window.addEventListener('popstate', function(e) {
   if (!e.state) return;
   _historyLock = true;
-  if (e.state.page === 'detail' && e.state.key) showDetail(e.state.key);
-  else showPage(e.state.page);
+  if (e.state.page === 'detail' && e.state.key) {
+    showDetail(e.state.key);
+  } else {
+    if (e.state.page === 'list') {
+      selectedKey = e.state.selectedKey || '';
+      const gfEl = document.getElementById('global-filter');
+      if (gfEl) gfEl.value = selectedKey;
+    }
+    showPage(e.state.page);
+  }
 });
 
 // 자동 복원
