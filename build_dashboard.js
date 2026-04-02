@@ -922,6 +922,7 @@ select optgroup {
       <div class="back-btn" onclick="goBackToList()">&#8592; 강의 리스트로</div>
       <div class="detail-title" id="detail-name"></div>
       <div class="detail-meta" id="detail-meta"></div>
+      <div id="detail-webinar-link" style="margin-top:6px;font-size:12px;"></div>
     </div>
     <div id="merge-panel" style="display:none;" class="merge-panel"></div>
 
@@ -1568,6 +1569,7 @@ const SCHEDULE_ALIAS = {
   목표매출:     ['목표매출','목표 매출','target_revenue','목표금액','매출목표'],
   ROAS:         ['ROAS','roas','로아스','광고수익률'],
   광고집행출연료: ['광고집행+출연료','광고집행출연료','광고비+출연료','광고집행','광고비출연료','광고+출연료'],
+  무료웨비나링크: ['무료웨비나 링크','무료웨비나링크','웨비나링크','웨비나 링크','webinar_link','webinar link','무료강의링크','무료강의 링크'],
 };
 
 function parseScheduleRows(rows) {
@@ -1613,6 +1615,7 @@ function parseScheduleRows(rows) {
       톡방인원: g('톡방인원',''), 라이브참여자: g('라이브참여자',''),
       목표매출: g('목표매출',''), ROAS: g('ROAS',''),
       광고집행출연료: g('광고집행출연료',''),
+      무료웨비나링크: g('무료웨비나링크',''),
     };
   }).filter(r => r.강의명);
   console.log('[일정파싱] 파싱 완료:', result.length, '행');
@@ -2063,6 +2066,41 @@ function showDetail(combinedKey) {
     '<span>플랫폼: '+d.플랫폼+'</span>' +
     (kisuStr ? '<span>기수: '+kisuStr+'</span>' : '') +
     '<span>'+dispRows.length+'개 기수 데이터</span>';
+  // 무료웨비나 링크 표시 (SCHEDULE_DATA에서 강의명 매칭)
+  (function() {
+    const wEl = document.getElementById('detail-webinar-link');
+    if (!wEl) return;
+    const normKey = normalizeLectureName(d.강의그룹명);
+    let link = '';
+    if (SCHEDULE_DATA && SCHEDULE_DATA.length > 0) {
+      // 1) 정규화 후 정확 매칭
+      let matched = SCHEDULE_DATA.find(s => normalizeLectureName(s.강의명) === normKey && s.무료웨비나링크);
+      // 2) 부분 문자열 매칭 (긴 쪽이 짧은 쪽 포함)
+      if (!matched) matched = SCHEDULE_DATA.find(s => {
+        const sn = normalizeLectureName(s.강의명);
+        return s.무료웨비나링크 && (sn.includes(normKey) || normKey.includes(sn));
+      });
+      // 3) 링크 없어도 매칭 강의 탐색 (링크 없음 표시용)
+      if (!matched) matched = SCHEDULE_DATA.find(s => normalizeLectureName(s.강의명) === normKey);
+      if (!matched) matched = SCHEDULE_DATA.find(s => {
+        const sn = normalizeLectureName(s.강의명);
+        return sn.includes(normKey) || normKey.includes(sn);
+      });
+      if (matched) link = matched.무료웨비나링크 || '';
+    }
+    if (SCHEDULE_DATA && SCHEDULE_DATA.length > 0) {
+      if (link) {
+        wEl.innerHTML = '<span style="color:var(--muted);margin-right:6px;">무료웨비나</span>' +
+          '<a href="' + link.replace(/"/g,'&quot;') + '" target="_blank" rel="noopener noreferrer" ' +
+          'style="color:var(--cyan);text-decoration:underline;word-break:break-all;">' + link + '</a>';
+      } else {
+        wEl.innerHTML = '<span style="color:var(--muted);margin-right:6px;">무료웨비나</span>' +
+          '<span style="color:var(--muted);">데이터 없음</span>';
+      }
+    } else {
+      wEl.innerHTML = '';
+    }
+  })();
   // 통합 강의 패널
   const mergePanel = document.getElementById('merge-panel');
   if (d.mergedFrom && d.mergedFrom.length > 0 && !kisuFilter) {
@@ -3031,6 +3069,6 @@ window.addEventListener('popstate', function(e) {
 </body>
 </html>`;
 
-fs.writeFileSync('C:/Users/ehdtl/Desktop/클로드/강의매출대시보드.html', html, 'utf-8');
-fs.writeFileSync('C:/Users/ehdtl/Desktop/클로드/index.html', html, 'utf-8');
+fs.writeFileSync('./강의매출대시보드.html', html, 'utf-8');
+fs.writeFileSync('./index.html', html, 'utf-8');
 console.log('완료! 파일 크기:', Math.round(html.length/1024), 'KB');
