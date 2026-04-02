@@ -889,19 +889,26 @@ select optgroup {
             <option value="10" selected>10분</option>
             <option value="30">30분</option>
             <option value="60">1시간</option>
+            <option value="1440">24시간</option>
           </select>
           <input type="checkbox" id="day-only-check" checked style="display:none;">
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
-            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);">
-              <span style="white-space:nowrap;">조회 시간</span>
-              <input type="time" id="day-start-time" value="19:30" onchange="reRenderTimeChart()"
+            <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);flex-wrap:wrap;justify-content:flex-end;">
+              <input type="date" id="range-start-date" onchange="reRenderTimeChart()"
                 style="background:var(--card2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;">
-              <span style="white-space:nowrap;">~ 익일</span>
-              <input type="time" id="day-end-time" value="03:00" onchange="reRenderTimeChart()"
+              <input type="time" id="range-start-time" value="19:30" onchange="reRenderTimeChart()"
+                style="background:var(--card2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;">
+              <span style="white-space:nowrap;">~</span>
+              <input type="date" id="range-end-date" onchange="reRenderTimeChart()"
+                style="background:var(--card2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;">
+              <input type="time" id="range-end-time" value="03:00" onchange="reRenderTimeChart()"
                 style="background:var(--card2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;">
             </div>
-            <span style="font-size:10px;color:var(--muted);opacity:0.7;">선택한 시간 구간의 데이터만 표시됩니다</span>
+            <span style="font-size:10px;color:var(--muted);opacity:0.7;">선택한 날짜+시간 범위의 데이터만 표시됩니다</span>
           </div>
+          <!-- 기존 시간 입력 호환성 보존 (hidden) -->
+          <input type="time" id="day-start-time" value="19:30" style="display:none;">
+          <input type="time" id="day-end-time" value="03:00" style="display:none;">
         </div>
       </div>
       <div class="chart-wrap" style="height:200px;"><canvas id="chart-time"></canvas></div>
@@ -1847,6 +1854,11 @@ function showDetail(combinedKey) {
 
   const d = SALES_DATA.find(x => x.lecture_key === lecture_key);
   if (!d) return;
+  // 강의 변경 시 날짜 피커 초기화 (자동 채우기가 재실행되도록)
+  if (currentDetailKey !== combinedKey) {
+    const _c = (id) => { const e = document.getElementById(id); if(e) e.value = ''; };
+    _c('range-start-date'); _c('range-end-date');
+  }
   currentDetailKey = combinedKey;
   selectedKey = combinedKey;
   document.getElementById('global-filter').value = combinedKey;
@@ -2014,22 +2026,41 @@ function renderTimeChart(combinedKey) {
     return;
   }
 
-  // ── 시간 범위 파싱 (데이터 필터 + X축 범위 모두에 반영) ──
-  const _pt = (id, def) => { const v = (document.getElementById(id)||{}).value || def; const [h,m] = v.split(':').map(Number); return [isNaN(h)?0:h, isNaN(m)?0:m]; };
-  const [startH, startM] = _pt('day-start-time', '19:30');
-  const [endH,   endM  ] = _pt('day-end-time',   '03:00');
-  const endDayOff = (endH * 60 + endM) <= (startH * 60 + startM) ? 1 : 0;
+  // ── 날짜+시간 범위 피커 자동 채우기 (강의 변경 시 lecture date 기본값) ──
+  const _sdEl = document.getElementById('range-start-date');
+  const _edEl = document.getElementById('range-end-date');
+  if (_sdEl && !_sdEl.value && lectureDates.length > 0) {
+    const firstD = [...lectureDates].sort()[0];
+    _sdEl.value = firstD;
+    const lastD = [...lectureDates].sort().pop();
+    // 종료 시간이 00:00~12:00 범위면 익일로 자동 설정
+    const _etEl = document.getElementById('range-end-time');
+    const etVal = (_etEl && _etEl.value) || '03:00';
+    const [eh] = etVal.split(':').map(Number);
+    const [stEl] = ((document.getElementById('range-start-time')||{}).value||'19:30').split(':').map(Number);
+    const endDateObj = new Date(lastD);
+    if (eh <= stEl) endDateObj.setDate(endDateObj.getDate() + 1); // 익일
+    if (_edEl) _edEl.value = endDateObj.toISOString().slice(0,10);
+  }
 
-  // ── "강의 당일만" 필터: 입력값 기준 시간 범위 ──
-  const dayOnlyEl = document.getElementById('day-only-check');
-  const dayOnlyChecked = dayOnlyEl && dayOnlyEl.checked && lectureDates.length > 0;
-  if (dayOnlyChecked) {
+  // ── 절대 날짜+시간 범위 파싱 ──
+  const _getAbsMs = (dateId, timeId, defTime) => {
+    const dv = (document.getElementById(dateId)||{}).value;
+    const tv = (document.getElementById(timeId)||{}).value || defTime;
+    if (!dv) return null;
+    const [yr, mo, dy] = dv.split('-').map(Number);
+    const [h, m] = tv.split(':').map(Number);
+    return new Date(yr, mo-1, dy, isNaN(h)?0:h, isNaN(m)?0:m, 0).getTime();
+  };
+  const rangeStartMs = _getAbsMs('range-start-date', 'range-start-time', '19:30');
+  const rangeEndMs   = _getAbsMs('range-end-date',   'range-end-time',   '03:00');
+
+  // ── 조회 범위 필터 ──
+  const hasRange = rangeStartMs !== null && rangeEndMs !== null;
+  if (hasRange) {
     orders = orders.filter(o => {
-      for (const ds of lectureDates) {
-        const [yr, mo, dy] = ds.split('-').map(Number);
-        if (o.ts >= new Date(yr, mo-1, dy, startH, startM, 0) && o.ts < new Date(yr, mo-1, dy+endDayOff, endH, endM, 0)) return true;
-      }
-      return false;
+      const t = o.ts.getTime();
+      return t >= rangeStartMs && t < rangeEndMs;
     });
   }
 
@@ -2052,24 +2083,23 @@ function renderTimeChart(combinedKey) {
     buckets[bMs].amount += o.amount;
   });
 
-  // ── X축 시작: 선택된 시작 시간 기준 ──
+  // ── X축 시작: 범위 피커 값 우선, 없으면 강의일 19:30 fallback ──
   let startMs;
-  if (lectureDates.length > 0) {
+  if (rangeStartMs !== null) {
+    startMs = Math.floor(rangeStartMs / intervalMs) * intervalMs;
+  } else if (lectureDates.length > 0) {
     const firstDate = [...lectureDates].sort()[0];
     const [yr, mo, dy] = firstDate.split('-').map(Number);
-    startMs = Math.floor(new Date(yr, mo-1, dy, startH, startM, 0).getTime() / intervalMs) * intervalMs;
+    startMs = Math.floor(new Date(yr, mo-1, dy, 19, 30, 0).getTime() / intervalMs) * intervalMs;
   } else {
     const o = orders[0];
-    startMs = Math.floor(new Date(o.ts.getFullYear(), o.ts.getMonth(), o.ts.getDate(), startH, startM, 0).getTime() / intervalMs) * intervalMs;
+    startMs = Math.floor(new Date(o.ts.getFullYear(), o.ts.getMonth(), o.ts.getDate(), 19, 30, 0).getTime() / intervalMs) * intervalMs;
   }
   const existingKeys = Object.keys(buckets).map(Number).sort((a,b)=>a-b);
-  // ── X축 끝: dayOnly 체크 시 선택된 종료 시간 기준, 아닐 경우 마지막 데이터 기준 ──
+  // ── X축 끝: 범위 피커 종료일 기준, 날짜 없으면 마지막 데이터 기준 ──
   let endMs;
-  if (dayOnlyChecked) {
-    const lastDate = [...lectureDates].sort().pop();
-    const [yr, mo, dy] = lastDate.split('-').map(Number);
-    const rawEndMs = new Date(yr, mo-1, dy+endDayOff, endH, endM, 0).getTime();
-    endMs = Math.max(startMs, Math.floor((rawEndMs - 1) / intervalMs) * intervalMs);
+  if (rangeEndMs !== null) {
+    endMs = Math.max(startMs, Math.floor((rangeEndMs - 1) / intervalMs) * intervalMs);
   } else {
     endMs = existingKeys.length > 0 ? Math.max(startMs, existingKeys[existingKeys.length-1]) : startMs;
   }
@@ -2437,8 +2467,8 @@ function _funnelErpDefaults(kd, combinedKey) {
     총신청자: kd.무료강의신청수||null,
     단톡방유입: 톡방인원,
     라이브참여자: 라이브참여자,
-    앵콜입장자: null,   // 시트에 없음 → "-" 표시
-    앵콜결제자: (upc.encore !== null && upc.encore !== undefined) ? upc.encore : null,  // 주문 유니크 앵콜 결제자
+    앵콜입장자: null,   // 수동 입력값만 사용 → "-" 표시
+    앵콜결제자: null,   // 수동 입력값만 사용 → "-" 표시 (자동 계산 금지)
     환불자: refundCnt,  // ERP 주문 파일 기준 (환불/취소 건수)
     최종결제자: upc.total !== null ? upc.total : (kd.수강생수||null),  // 주문 유니크 우선, 없으면 ERP
   };
@@ -2451,9 +2481,15 @@ function _funnelBuild(kd) {
   FUNNEL_STAGES.forEach(s=>{
     v[s.key] = sv[s.key]!==undefined ? sv[s.key] : (def[s.key]!==undefined ? def[s.key] : null);
   });
-  // 라이브 결제자 = 최종 결제자 - 앵콜 결제자 (수동 입력 없을 때만 자동 계산)
-  if (sv.라이브결제자===undefined && v.최종결제자!==null && v.앵콜결제자!==null) {
-    v.라이브결제자 = Math.max(0, Number(v.최종결제자) - Number(v.앵콜결제자));
+  // 라이브 결제자 기본값 (수동 입력 없을 때만 자동 계산)
+  // - 앵콜 결제자 수동 입력 없음: 라이브 결제자 = 최종 결제자
+  // - 앵콜 결제자 수동 입력 있음: 라이브 결제자 = 최종 결제자 - 앵콜 결제자
+  if (sv.라이브결제자===undefined && v.최종결제자!==null) {
+    if (sv.앵콜결제자!==undefined && v.앵콜결제자!==null) {
+      v.라이브결제자 = Math.max(0, Number(v.최종결제자) - Number(v.앵콜결제자));
+    } else {
+      v.라이브결제자 = Number(v.최종결제자);
+    }
   }
   const tgt = {};
   Object.keys(FUNNEL_DEFAULTS).forEach(k=>{ tgt[k]=st[k]!==undefined?st[k]:FUNNEL_DEFAULTS[k]; });
